@@ -56,10 +56,9 @@ dependencies {
     implementation(libs.androidx.splashscreen)
 
     // Wear Compose
-    implementation(platform(libs.androidx.wear.compose.bom))
     implementation(libs.androidx.wear.compose.material)
     implementation(libs.androidx.wear.compose.foundation)
-    debugImplementation(libs.androidx.wear.compose.ui.tooling)
+    debugImplementation(libs.androidx.ui.tooling)
 
     // Wearable Data Layer
     implementation(libs.play.services.wearable)
