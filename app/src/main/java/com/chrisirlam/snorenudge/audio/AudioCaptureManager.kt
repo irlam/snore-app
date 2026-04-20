@@ -37,15 +37,27 @@ class AudioCaptureManager(
         if (audioRecord != null) return
 
         val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        if (minBufSize <= 0) {
+            Log.e(TAG, "AudioRecord invalid min buffer size: $minBufSize")
+            return
+        }
         val bufferSize = maxOf(minBufSize, FRAME_SIZE_SAMPLES * 2 * 4)
 
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT,
-            bufferSize
-        )
+        val record = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE,
+                CHANNEL_CONFIG,
+                AUDIO_FORMAT,
+                bufferSize
+            )
+        } catch (se: SecurityException) {
+            Log.e(TAG, "Microphone permission missing: ${se.message}")
+            return
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create AudioRecord: ${e.message}")
+            return
+        }
 
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             Log.e(TAG, "AudioRecord failed to initialize")
@@ -54,7 +66,17 @@ class AudioCaptureManager(
         }
 
         audioRecord = record
-        record.startRecording()
+        try {
+            record.startRecording()
+        } catch (se: SecurityException) {
+            Log.e(TAG, "Microphone permission denied at start: ${se.message}")
+            record.release()
+            return
+        } catch (e: Exception) {
+            Log.e(TAG, "AudioRecord start failed: ${e.message}")
+            record.release()
+            return
+        }
         Log.d(TAG, "AudioRecord started, bufferSize=$bufferSize")
 
         captureJob = scope.launch(Dispatchers.IO) {

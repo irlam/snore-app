@@ -9,7 +9,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.chrisirlam.snorenudge"
+        applicationId = "com.chrisirlam.snorenudge.wear"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
@@ -44,6 +44,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":shared"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

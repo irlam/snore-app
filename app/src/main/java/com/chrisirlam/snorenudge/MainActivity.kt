@@ -59,6 +59,15 @@ fun SnoreNudgeApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
+    LaunchedEffect(settings.debugMode, currentDestination?.route) {
+        if (!settings.debugMode && currentDestination?.route == Screen.Debug.route) {
+            navController.navigate(Screen.Home.route) {
+                popUpTo(Screen.Debug.route) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {

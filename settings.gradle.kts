@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 rootProject.name = "SnoreNudge"
 include(":app")
 include(":wear")
+include(":shared")

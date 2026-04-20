@@ -82,6 +82,13 @@ fun WatchMainScreen(viewModel: WatchMainViewModel) {
                 }
             }
 
+            Text(
+                text = if (state.isPhoneConnected) "Phone connected (${state.connectedPhoneCount})" else "Phone disconnected",
+                fontSize = 10.sp,
+                color = if (state.isPhoneConnected) Color(0xFF66BB6A) else Color(0xFFFF8A65),
+                textAlign = TextAlign.Center
+            )
+
             Spacer(Modifier.height(4.dp))
 
             // Test vibration button

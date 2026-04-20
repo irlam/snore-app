@@ -14,6 +14,10 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
     private val dao = SnoreDatabase.getInstance(application).snoreEventDao()
 
+    init {
+        pruneOldEvents()
+    }
+
     val events: StateFlow<List<SnoreEvent>> = dao.getAllEventsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

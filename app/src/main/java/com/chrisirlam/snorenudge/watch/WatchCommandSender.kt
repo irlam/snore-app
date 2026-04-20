@@ -2,19 +2,12 @@ package com.chrisirlam.snorenudge.watch
 
 import android.content.Context
 import android.util.Log
+import com.chrisirlam.snorenudge.shared.WearProtocol
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.tasks.await
 
 private const val TAG = "WatchCommandSender"
-
-/** Message path constants shared between phone and watch. */
-object WearPaths {
-    const val VIBRATE = "/snore/vibrate"
-    const val STOP_VIBRATE = "/snore/stop_vibrate"
-    const val TEST_VIBRATE = "/snore/test_vibrate"
-    const val STATUS_UPDATE = "/snore/status"
-}
 
 /**
  * Sends one-shot commands to all connected watch nodes via the Wearable Message API.
@@ -32,15 +25,15 @@ class WatchCommandSender(private val context: Context) {
      * @return Number of nodes the message was successfully sent to.
      */
     suspend fun sendVibrateCommand(strong: Boolean = true): Int {
-        val payload = if (strong) "strong" else "medium"
-        return sendToAllNodes(WearPaths.VIBRATE, payload.toByteArray())
+        val payload = if (strong) WearProtocol.Payload.STRONG else WearProtocol.Payload.MEDIUM
+        return sendToAllNodes(WearProtocol.Paths.VIBRATE, payload.toByteArray())
     }
 
     suspend fun sendStopVibrateCommand(): Int =
-        sendToAllNodes(WearPaths.STOP_VIBRATE, ByteArray(0))
+        sendToAllNodes(WearProtocol.Paths.STOP_VIBRATE, ByteArray(0))
 
     suspend fun sendTestVibrateCommand(): Int =
-        sendToAllNodes(WearPaths.TEST_VIBRATE, ByteArray(0))
+        sendToAllNodes(WearProtocol.Paths.TEST_VIBRATE, ByteArray(0))
 
     /** Returns the number of reachable watch nodes (0 = watch not connected). */
     suspend fun getConnectedNodeCount(): Int {

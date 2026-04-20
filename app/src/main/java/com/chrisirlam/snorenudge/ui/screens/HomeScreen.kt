@@ -38,6 +38,9 @@ fun HomeScreen(
         }
     }.toTypedArray()
 
+    val canStartMonitoring = state.hasMicPermission &&
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || state.hasNotificationPermission)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -151,7 +154,7 @@ fun HomeScreen(
             if (!state.isMonitoring) {
                 Button(
                     onClick = { viewModel.startMonitoring() },
-                    enabled = state.hasMicPermission,
+                    enabled = canStartMonitoring,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(72.dp),

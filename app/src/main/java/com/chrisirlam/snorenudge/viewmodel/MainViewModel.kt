@@ -58,6 +58,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onPermissionsUpdated() = updateDeviceState()
 
     fun startMonitoring() {
+        val state = _uiState.value
+        if (!state.hasMicPermission) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !state.hasNotificationPermission) return
+
         val ctx = getApplication<Application>()
         SnoreMonitoringService.startMonitoring(ctx)
         _uiState.update { it.copy(isMonitoring = true) }
@@ -70,7 +74,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendTestVibrate() = viewModelScope.launch {
-        watchCommandSender.sendTestVibrateCommand()
+        watchCommandSender.sendVibrateCommand(strong = true)
     }
 
     fun fireFakeSnore() {

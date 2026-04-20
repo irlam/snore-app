@@ -17,10 +17,6 @@
     <!-- Vibration -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Wearable communication -->
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-
     <!-- Boot receiver so service can be started after reboot if user had monitoring active -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

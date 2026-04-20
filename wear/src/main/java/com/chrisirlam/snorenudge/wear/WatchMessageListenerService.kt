@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.chrisirlam.snorenudge.shared.WearProtocol
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,17 +47,17 @@ class WatchMessageListenerService : WearableListenerService() {
     }
 
     override fun onMessageReceived(event: MessageEvent) {
-        Log.d(TAG, "Message received: path=${event.path} payload=${String(event.data)}")
+        val payload = String(event.data)
+        Log.d(TAG, "Message received: path=${event.path} payload=$payload")
 
         acquireWakeLock()
 
         val command = when (event.path) {
-            "/snore/vibrate" -> {
-                val payload = String(event.data)
-                if (payload == "strong") WatchCommand.VIBRATE_STRONG else WatchCommand.VIBRATE_MEDIUM
+            WearProtocol.Paths.VIBRATE -> {
+                if (payload == WearProtocol.Payload.STRONG) WatchCommand.VIBRATE_STRONG else WatchCommand.VIBRATE_MEDIUM
             }
-            "/snore/test_vibrate" -> WatchCommand.TEST
-            "/snore/stop_vibrate" -> WatchCommand.STOP
+            WearProtocol.Paths.TEST_VIBRATE -> WatchCommand.TEST
+            WearProtocol.Paths.STOP_VIBRATE -> WatchCommand.STOP
             else -> null
         }
 

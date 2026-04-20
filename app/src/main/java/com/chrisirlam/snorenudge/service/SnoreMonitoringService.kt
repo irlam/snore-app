@@ -157,7 +157,7 @@ class SnoreMonitoringService : Service() {
         }
 
         serviceScope.launch {
-            fireTrigger(1.0f, 1.0f, 0f, 0f, 0f, "debug")
+            fireTrigger(1.0f, 1.0f, 0f, 0f, 0f, "test")
             if (temporaryForeground) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelfResult(startId)
@@ -219,9 +219,10 @@ class SnoreMonitoringService : Service() {
         triggerMutex.withLock {
             val settings = currentSettings
             val nowMs = System.currentTimeMillis()
-            val cooldownMs = settings.cooldownDurationSeconds * 1000L
+            val effectiveCooldownSeconds = settings.cooldownDurationSeconds.coerceAtLeast(20)
+            val cooldownMs = effectiveCooldownSeconds * 1000L
             val previousTriggerMs = lastTriggerMs
-            if (previousTriggerMs != null && nowMs - previousTriggerMs < cooldownMs) {
+            if (source != "test" && previousTriggerMs != null && nowMs - previousTriggerMs < cooldownMs) {
                 Log.d(TAG, "Trigger suppressed by cooldown: source=$source")
                 return
             }

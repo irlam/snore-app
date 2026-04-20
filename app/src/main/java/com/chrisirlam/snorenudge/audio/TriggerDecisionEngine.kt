@@ -5,6 +5,7 @@ import com.chrisirlam.snorenudge.data.AppSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.max
 
 private const val TAG = "TriggerDecisionEngine"
 
@@ -37,6 +38,7 @@ class TriggerDecisionEngine {
     private var currentState = State.IDLE
     private var cooldownEndMs = 0L
     private var emaConfidence = 0f
+    private var noiseFloorEma = 0f
 
     private val _stateFlow = MutableStateFlow(
         DecisionResult(State.IDLE, 0f, 0f, false, 0L, 0f)
@@ -54,6 +56,8 @@ class TriggerDecisionEngine {
         if (scoreWindow.size >= longWindowSize) scoreWindow.removeFirst()
         scoreWindow.addLast(score)
         emaConfidence = if (scoreWindow.size == 1) score else (emaConfidence + ((score - emaConfidence) * emaAlpha))
+        val noiseAlpha = if (score <= 0.45f) 0.06f else 0.015f
+        noiseFloorEma = if (scoreWindow.size == 1) score else (noiseFloorEma + ((score - noiseFloorEma) * noiseAlpha))
 
         val longAverage = scoreWindow.average().toFloat()
         val recentAverage = scoreWindow.takeLast(recentWindowSize).average().toFloat()
@@ -64,8 +68,14 @@ class TriggerDecisionEngine {
             ).coerceIn(0f, 1f)
 
         val triggerThreshold = (0.62f - (settings.sensitivity * 0.22f)).coerceIn(0.36f, 0.62f)
-        val entryThreshold = (triggerThreshold + 0.05f).coerceAtMost(0.94f)
-        val releaseThreshold = (triggerThreshold - 0.12f).coerceAtLeast(0.20f)
+        val dynamicNoiseGate = (noiseFloorEma + (0.26f - (settings.sensitivity * 0.12f))).coerceIn(0.30f, 0.88f)
+        val effectiveTriggerThreshold = max(triggerThreshold, dynamicNoiseGate)
+        val entryThreshold = max(
+            triggerThreshold + 0.06f,
+            effectiveTriggerThreshold + 0.04f
+        ).coerceAtMost(0.95f)
+        val releaseThreshold = (effectiveTriggerThreshold - 0.14f).coerceAtLeast(0.20f)
+        val recentGate = (noiseFloorEma + 0.08f).coerceAtMost(0.90f)
 
         val framesRequired = ((settings.triggerDurationSeconds * 1000) / 50).coerceAtLeast(10)
 
@@ -82,12 +92,14 @@ class TriggerDecisionEngine {
                     rollingConfidence,
                     false,
                     (cooldownEndMs - nowMs).coerceAtLeast(0),
-                    triggerThreshold
+                    effectiveTriggerThreshold
                 )
             }
 
             State.IDLE, State.ACCUMULATING -> {
-                val positiveFrame = score >= triggerThreshold || rollingConfidence >= entryThreshold
+                val positiveFrame =
+                    (score >= effectiveTriggerThreshold || rollingConfidence >= entryThreshold) &&
+                        recentAverage >= recentGate
 
                 if (positiveFrame) {
                     consecutivePositiveFrames++
@@ -102,15 +114,16 @@ class TriggerDecisionEngine {
                     Log.i(TAG, "Snore trigger! rollingConf=$rollingConfidence consecutive=$consecutivePositiveFrames")
                     currentState = State.TRIGGERED
                     cooldownEndMs = nowMs + (settings.cooldownDurationSeconds * 1000L)
-                    DecisionResult(State.TRIGGERED, score, rollingConfidence, true, 0L, triggerThreshold)
+                    DecisionResult(State.TRIGGERED, score, rollingConfidence, true, 0L, effectiveTriggerThreshold)
                         .also {
                             currentState = State.COOLDOWN
                             consecutivePositiveFrames = 0
                             scoreWindow.clear()
                             emaConfidence = 0f
+                            noiseFloorEma = 0f
                         }
                 } else {
-                    DecisionResult(currentState, score, rollingConfidence, false, 0L, triggerThreshold)
+                    DecisionResult(currentState, score, rollingConfidence, false, 0L, effectiveTriggerThreshold)
                 }
             }
 
@@ -122,7 +135,7 @@ class TriggerDecisionEngine {
                     rollingConfidence,
                     false,
                     (cooldownEndMs - nowMs).coerceAtLeast(0),
-                    triggerThreshold
+                    effectiveTriggerThreshold
                 )
             }
         }
@@ -137,6 +150,7 @@ class TriggerDecisionEngine {
         currentState = State.IDLE
         cooldownEndMs = 0L
         emaConfidence = 0f
+        noiseFloorEma = 0f
         _stateFlow.value = DecisionResult(State.IDLE, 0f, 0f, false, 0L, 0f)
     }
 
