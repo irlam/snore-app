@@ -16,12 +16,12 @@ private const val TAG = "BootReceiver"
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             if (SnoreMonitoringService.wasMonitoring(context)) {
-                Log.i(TAG, "Boot completed — restarting snore monitoring")
+                Log.i(TAG, "System event ${intent.action} — restarting snore monitoring")
                 SnoreMonitoringService.startMonitoring(context)
             } else {
-                Log.d(TAG, "Boot completed — monitoring was not active, not restarting")
+                Log.d(TAG, "System event ${intent.action} — monitoring was not active, not restarting")
             }
         }
     }

@@ -30,70 +30,67 @@ interface SnoreClassifier {
 class RuleBasedSnoreClassifier : SnoreClassifier {
 
     companion object {
-        // Energy floor — frames below this RMS are treated as silence
         private const val RMS_FLOOR = 0.003f
-        // Ideal snore band energy ratio
-        private const val TARGET_BAND_RATIO = 0.35f
-        // Ideal primary sub-band ratio
-        private const val TARGET_PRIMARY_RATIO = 0.20f
-        // Centroid above this (Hz) penalises the score (snore is < 400 Hz ideally)
-        private const val CENTROID_MAX_HZ = 400f
-        // Spectral flatness above this reduces confidence (pure noise)
-        private const val FLATNESS_THRESHOLD = 0.6f
-        // ZCR range for snoring at 16 kHz: ~0.01–0.08
-        private const val ZCR_LOW = 0.005f
-        private const val ZCR_HIGH = 0.10f
+        private const val TARGET_BAND_RATIO = 0.30f
+        private const val TARGET_PRIMARY_RATIO = 0.18f
+        private const val TARGET_LOW_FREQUENCY_RATIO = 0.12f
+        private const val IDEAL_CENTROID_HZ = 220f
+        private const val MAX_CENTROID_HZ = 550f
+        private const val FLATNESS_GOOD = 0.38f
+        private const val FLATNESS_BAD = 0.82f
+        private const val ZCR_IDEAL = 0.032f
+        private const val ZCR_TOLERANCE = 0.05f
     }
 
     override fun classify(features: SnoreFeatures, sensitivity: Float): Float {
-        // sensitivity in [0, 1] → adjust the RMS threshold inversely
-        val rmsThreshold = RMS_FLOOR * (2f - sensitivity)   // high sens = lower threshold
+        val clampedSensitivity = sensitivity.coerceIn(0f, 1f)
+        val rmsThreshold = RMS_FLOOR * (1.8f - (0.7f * clampedSensitivity))
 
-        // Hard gate: very quiet frames cannot be snoring
         if (features.rms < rmsThreshold) return 0f
+        if (features.spectralFlatness > 0.95f && features.spectralCentroid > 900f) return 0f
 
         var score = 0f
         var weight = 0f
 
-        // Component 1: snore band energy ratio (weight 0.30)
         val bandScore = (features.snoreBandRatio / TARGET_BAND_RATIO).coerceIn(0f, 1f)
-        score += bandScore * 0.30f
-        weight += 0.30f
+        score += bandScore * 0.24f
+        weight += 0.24f
 
-        // Component 2: primary sub-band ratio (weight 0.20)
         val primaryScore = (features.primaryBandRatio / TARGET_PRIMARY_RATIO).coerceIn(0f, 1f)
         score += primaryScore * 0.20f
         weight += 0.20f
 
-        // Component 3: spectral centroid penalty (weight 0.20)
-        val centroidScore = if (features.spectralCentroid <= CENTROID_MAX_HZ) 1f
-        else (1f - ((features.spectralCentroid - CENTROID_MAX_HZ) / CENTROID_MAX_HZ)).coerceIn(0f, 1f)
+        val lowFrequencyScore = (features.lowFrequencyRatio / TARGET_LOW_FREQUENCY_RATIO).coerceIn(0f, 1f)
+        score += lowFrequencyScore * 0.18f
+        weight += 0.18f
+
+        val centroidScore = when {
+            features.spectralCentroid <= IDEAL_CENTROID_HZ -> 1f
+            features.spectralCentroid >= MAX_CENTROID_HZ -> 0f
+            else -> 1f - ((features.spectralCentroid - IDEAL_CENTROID_HZ) / (MAX_CENTROID_HZ - IDEAL_CENTROID_HZ))
+        }
         score += centroidScore * 0.20f
         weight += 0.20f
 
-        // Component 4: spectral flatness (less flat = more tonal = more snore-like) (weight 0.15)
-        val flatnessPenalty = if (features.spectralFlatness > FLATNESS_THRESHOLD)
-            1f - ((features.spectralFlatness - FLATNESS_THRESHOLD) / (1f - FLATNESS_THRESHOLD))
-        else 1f
-        score += flatnessPenalty.coerceIn(0f, 1f) * 0.15f
-        weight += 0.15f
-
-        // Component 5: zero crossing rate — snore is low-freq so ZCR is in moderate-low range (weight 0.15)
-        val zcrScore = when {
-            features.zeroCrossingRate < ZCR_LOW ->
-                // Too few crossings — near-silence or sub-20 Hz rumble
-                (features.zeroCrossingRate / ZCR_LOW).coerceIn(0f, 1f)
-            features.zeroCrossingRate <= ZCR_HIGH -> 1f
-            else ->
-                // Too many crossings — broadband noise or speech
-                (1f - ((features.zeroCrossingRate - ZCR_HIGH) / ZCR_HIGH)).coerceIn(0f, 1f)
+        val flatnessScore = when {
+            features.spectralFlatness <= FLATNESS_GOOD -> 1f
+            features.spectralFlatness >= FLATNESS_BAD -> 0f
+            else -> 1f - ((features.spectralFlatness - FLATNESS_GOOD) / (FLATNESS_BAD - FLATNESS_GOOD))
         }
-        score += zcrScore * 0.15f
-        weight += 0.15f
+        score += flatnessScore * 0.10f
+        weight += 0.10f
+
+        val zcrScore = (1f - (kotlin.math.abs(features.zeroCrossingRate - ZCR_IDEAL) / ZCR_TOLERANCE))
+            .coerceIn(0f, 1f)
+        score += zcrScore * 0.08f
+        weight += 0.08f
+
+        val rmsScore = ((features.rms - rmsThreshold) / (0.03f + rmsThreshold)).coerceIn(0f, 1f)
+        score += rmsScore * 0.20f
+        weight += 0.20f
 
         val rawScore = if (weight > 0) score / weight else 0f
-
-        // Apply sensitivity as a final scale — higher sensitivity amplifies marginal detections
-        return (rawScore * (0.5f + sensitivity * 0.5f)).coerceIn(0f, 1f)
+        val decisionFloor = (0.34f - (0.12f * clampedSensitivity)).coerceIn(0.18f, 0.34f)
+        return ((rawScore - decisionFloor) / (1f - decisionFloor)).coerceIn(0f, 1f)
     }
 }

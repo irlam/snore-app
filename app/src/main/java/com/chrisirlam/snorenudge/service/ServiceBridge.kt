@@ -15,12 +15,15 @@ import kotlinx.coroutines.flow.asStateFlow
 object ServiceBridge {
 
     data class LiveState(
+        val frameConfidence: Float = 0f,
         val rollingConfidence: Float = 0f,
+        val triggerThreshold: Float = 0f,
         val engineState: TriggerDecisionEngine.State = TriggerDecisionEngine.State.IDLE,
         val cooldownRemainingMs: Long = 0L,
         val lastTriggerMs: Long? = null,
         val rmsLevel: Float = 0f,
-        val zeroCrossingRate: Float = 0f
+        val zeroCrossingRate: Float = 0f,
+        val lowFrequencyRatio: Float = 0f
     )
 
     private val _liveState = MutableStateFlow(LiveState())

@@ -1,13 +1,12 @@
 package com.chrisirlam.snorenudge.viewmodel
 
 import android.app.Application
+import android.os.PowerManager
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.chrisirlam.snorenudge.audio.TriggerDecisionEngine
-import com.chrisirlam.snorenudge.data.SettingsDataStore
 import com.chrisirlam.snorenudge.service.SnoreMonitoringService
 import com.chrisirlam.snorenudge.watch.WatchCommandSender
 import kotlinx.coroutines.delay
@@ -19,23 +18,24 @@ data class MainUiState(
     val watchConnected: Boolean = false,
     val watchNodeCount: Int = 0,
     val hasMicPermission: Boolean = false,
-    val hasNotificationPermission: Boolean = false
+    val hasNotificationPermission: Boolean = false,
+    val batteryOptimisationIgnored: Boolean = false,
+    val isSamsungDevice: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val settingsDataStore = SettingsDataStore(application)
     private val watchCommandSender = WatchCommandSender(application)
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     init {
-        checkPermissions()
-        pollWatchConnection()
+        updateDeviceState()
+        pollStatus()
     }
 
-    private fun checkPermissions() {
+    private fun updateDeviceState() {
         val ctx = getApplication<Application>()
         val mic = ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
@@ -43,15 +43,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) ==
                     PackageManager.PERMISSION_GRANTED
         } else true
+        val powerManager = ctx.getSystemService(PowerManager::class.java)
+        val batteryOptimisationIgnored = powerManager?.isIgnoringBatteryOptimizations(ctx.packageName) == true
 
         _uiState.update { it.copy(
             hasMicPermission = mic,
             hasNotificationPermission = notif,
-            isMonitoring = SnoreMonitoringService.isRunning
+            isMonitoring = SnoreMonitoringService.isRunning,
+            batteryOptimisationIgnored = batteryOptimisationIgnored,
+            isSamsungDevice = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
         ) }
     }
 
-    fun onPermissionsUpdated() = checkPermissions()
+    fun onPermissionsUpdated() = updateDeviceState()
 
     fun startMonitoring() {
         val ctx = getApplication<Application>()
@@ -71,16 +75,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun fireFakeSnore() {
         val ctx = getApplication<Application>()
-        val intent = android.content.Intent(ctx, SnoreMonitoringService::class.java)
-            .setAction(SnoreMonitoringService.ACTION_FAKE_SNORE)
-        ctx.startService(intent)
+        SnoreMonitoringService.sendFakeTrigger(ctx)
     }
 
-    private fun pollWatchConnection() = viewModelScope.launch {
+    private fun pollStatus() = viewModelScope.launch {
         while (true) {
             val count = watchCommandSender.getConnectedNodeCount()
+            updateDeviceState()
             _uiState.update { it.copy(watchConnected = count > 0, watchNodeCount = count) }
-            delay(10_000L) // poll every 10 s
+            delay(5_000L)
         }
     }
 }

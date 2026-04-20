@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.*
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.chrisirlam.snorenudge.MainActivity
 import com.chrisirlam.snorenudge.R
@@ -14,7 +15,9 @@ import com.chrisirlam.snorenudge.audio.*
 import com.chrisirlam.snorenudge.data.*
 import com.chrisirlam.snorenudge.watch.WatchCommandSender
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private const val TAG = "SnoreMonitoringService"
 private const val NOTIFICATION_ID = 1001
@@ -48,13 +51,19 @@ class SnoreMonitoringService : Service() {
         fun startMonitoring(context: Context) {
             val intent = Intent(context, SnoreMonitoringService::class.java)
                 .setAction(ACTION_START)
-            context.startForegroundService(intent)
+            ContextCompat.startForegroundService(context, intent)
         }
 
         fun stopMonitoring(context: Context) {
             val intent = Intent(context, SnoreMonitoringService::class.java)
                 .setAction(ACTION_STOP)
             context.startService(intent)
+        }
+
+        fun sendFakeTrigger(context: Context) {
+            val intent = Intent(context, SnoreMonitoringService::class.java)
+                .setAction(ACTION_FAKE_SNORE)
+            ContextCompat.startForegroundService(context, intent)
         }
 
         /** Write the monitoring-active flag synchronously (safe from any thread/receiver). */
@@ -82,8 +91,12 @@ class SnoreMonitoringService : Service() {
     private lateinit var classifier: RuleBasedSnoreClassifier
     private lateinit var decisionEngine: TriggerDecisionEngine
 
+    private var settingsJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var lastTriggerMs: Long? = null
+    private var currentSettings = AppSettings()
+    private val triggerMutex = Mutex()
+    private var explicitStopRequested = false
 
     override fun onCreate() {
         super.onCreate()
@@ -96,9 +109,13 @@ class SnoreMonitoringService : Service() {
         classifier = RuleBasedSnoreClassifier()
         decisionEngine = TriggerDecisionEngine()
 
-        audioCaptureManager = AudioCaptureManager { rawFrame ->
-            serviceScope.launch { processFrame(rawFrame) }
+        settingsJob = serviceScope.launch {
+            settingsDataStore.settingsFlow.collectLatest { settings ->
+                currentSettings = settings
+            }
         }
+
+        audioCaptureManager = AudioCaptureManager(::processFrame)
 
         createNotificationChannel()
     }
@@ -106,14 +123,21 @@ class SnoreMonitoringService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startMonitoringInternal()
-            ACTION_STOP -> stopSelf()
-            ACTION_FAKE_SNORE -> serviceScope.launch { fireTrigger(1.0f, 0.9f, 0f, 0f, "test") }
+            ACTION_STOP -> {
+                explicitStopRequested = true
+                stopSelf()
+            }
+            ACTION_FAKE_SNORE -> handleFakeTrigger(startId)
         }
         return START_STICKY
     }
 
     private fun startMonitoringInternal() {
-        if (_isRunning) return
+        explicitStopRequested = false
+        if (_isRunning) {
+            startForeground(NOTIFICATION_ID, buildNotification("Monitoring for snoring…"))
+            return
+        }
         _isRunning = true
 
         acquireWakeLock()
@@ -126,35 +150,61 @@ class SnoreMonitoringService : Service() {
         Log.i(TAG, "Snore monitoring started")
     }
 
-    private suspend fun processFrame(rawFrame: ShortArray) {
-        val settings = settingsDataStore.settingsFlow.first()
+    private fun handleFakeTrigger(startId: Int) {
+        val temporaryForeground = !_isRunning
+        if (temporaryForeground) {
+            startForeground(NOTIFICATION_ID, buildNotification("Sending test nudge…"))
+        }
+
+        serviceScope.launch {
+            fireTrigger(1.0f, 1.0f, 0f, 0f, 0f, "debug")
+            if (temporaryForeground) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelfResult(startId)
+            }
+        }
+    }
+
+    private fun processFrame(rawFrame: ShortArray) {
+        val settings = currentSettings
         val frame = audioFrameProcessor.process(rawFrame)
         val features = featureExtractor.extract(frame)
         val score = classifier.classify(features, settings.sensitivity)
         val result = decisionEngine.onFrameScore(score, settings)
 
-        // Push live state to the bridge so the UI can observe it
         ServiceBridge.update(
             ServiceBridge.LiveState(
+                frameConfidence = result.frameConfidence,
                 rollingConfidence = result.rollingConfidence,
+                triggerThreshold = result.triggerThreshold,
                 engineState = result.state,
                 cooldownRemainingMs = result.cooldownRemainingMs,
                 lastTriggerMs = lastTriggerMs,
                 rmsLevel = frame.rms,
-                zeroCrossingRate = features.zeroCrossingRate
+                zeroCrossingRate = features.zeroCrossingRate,
+                lowFrequencyRatio = features.lowFrequencyRatio
             )
         )
 
         if (settings.debugMode) {
             Log.v(
                 TAG,
-                "rms=${frame.rms} zcr=${features.zeroCrossingRate} score=$score " +
-                        "state=${result.state} conf=${result.rollingConfidence}"
+                "rms=${frame.rms} zcr=${features.zeroCrossingRate} lowFreq=${features.lowFrequencyRatio} " +
+                        "frame=$score rolling=${result.rollingConfidence} state=${result.state}"
             )
         }
 
         if (result.shouldTrigger) {
-            fireTrigger(score, result.rollingConfidence, frame.rms, features.zeroCrossingRate, "snore")
+            serviceScope.launch {
+                fireTrigger(
+                    score = score,
+                    confidence = result.rollingConfidence,
+                    rmsLevel = frame.rms,
+                    zeroCrossingRate = features.zeroCrossingRate,
+                    lowFrequencyRatio = features.lowFrequencyRatio,
+                    source = "snore"
+                )
+            }
         }
     }
 
@@ -163,37 +213,49 @@ class SnoreMonitoringService : Service() {
         confidence: Float,
         rmsLevel: Float,
         zeroCrossingRate: Float,
+        lowFrequencyRatio: Float,
         source: String
     ) {
-        val settings = settingsDataStore.settingsFlow.first()
-        val nowMs = System.currentTimeMillis()
-        lastTriggerMs = nowMs
-        Log.i(TAG, "Trigger fired! source=$source confidence=$confidence rms=$rmsLevel")
+        triggerMutex.withLock {
+            val settings = currentSettings
+            val nowMs = System.currentTimeMillis()
+            val cooldownMs = settings.cooldownDurationSeconds * 1000L
+            val previousTriggerMs = lastTriggerMs
+            if (previousTriggerMs != null && nowMs - previousTriggerMs < cooldownMs) {
+                Log.d(TAG, "Trigger suppressed by cooldown: source=$source")
+                return
+            }
 
-        var watchSent = false
-        if (settings.watchVibrationEnabled) {
-            val sent = watchCommandSender.sendVibrateCommand(strong = settings.vibrationStrong)
-            watchSent = sent > 0
-            Log.d(TAG, "Watch command sent to $sent nodes")
+            lastTriggerMs = nowMs
+            Log.i(
+                TAG,
+                "Trigger fired! source=$source score=$score confidence=$confidence rms=$rmsLevel " +
+                    "zcr=$zeroCrossingRate lowFreq=$lowFrequencyRatio"
+            )
+
+            var watchSent = false
+            if (settings.watchVibrationEnabled) {
+                val sent = watchCommandSender.sendVibrateCommand(strong = settings.vibrationStrong)
+                watchSent = sent > 0
+                Log.d(TAG, "Watch command sent to $sent nodes")
+            }
+
+            if (settings.phoneVibrationEnabled) vibratePhone(settings.vibrationStrong)
+            if (settings.phoneSoundEnabled) playAlertTone()
+
+            val event = SnoreEvent(
+                timestampMs = nowMs,
+                confidence = confidence,
+                rmsLevel = rmsLevel,
+                watchCommandSent = watchSent,
+                phoneVibrated = settings.phoneVibrationEnabled,
+                triggerSource = source
+            )
+            snoreEventDao.insertEvent(event)
+
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.notify(NOTIFICATION_ID, buildNotification("Snore detected! Nudge sent."))
         }
-
-        if (settings.phoneVibrationEnabled) vibratePhone(settings.vibrationStrong)
-        if (settings.phoneSoundEnabled) playAlertTone()
-
-        // Persist event (lightweight — no audio stored)
-        val event = SnoreEvent(
-            timestampMs = nowMs,
-            confidence = confidence,
-            rmsLevel = rmsLevel,
-            watchCommandSent = watchSent,
-            phoneVibrated = settings.phoneVibrationEnabled,
-            triggerSource = source
-        )
-        snoreEventDao.insertEvent(event)
-
-        // Update notification
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.notify(NOTIFICATION_ID, buildNotification("Snore detected! Nudge sent."))
     }
 
     private fun vibratePhone(strong: Boolean) {
@@ -224,19 +286,34 @@ class SnoreMonitoringService : Service() {
     }
 
     private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:SnoreWakeLock").apply {
             acquire(12 * 60 * 60 * 1000L) // up to 12 hours
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (_isRunning && wasMonitoring(applicationContext) && !explicitStopRequested) {
+            scheduleSelfRestart()
+        }
+    }
+
     override fun onDestroy() {
+        val shouldRestart = _isRunning && !explicitStopRequested && wasMonitoring(applicationContext)
         _isRunning = false
         audioCaptureManager.stop()
+        settingsJob?.cancel()
         serviceScope.cancel()
         wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         ServiceBridge.reset()
-        persistMonitoringFlag(applicationContext, false)
+        if (explicitStopRequested) {
+            persistMonitoringFlag(applicationContext, false)
+        } else if (shouldRestart) {
+            scheduleSelfRestart()
+        }
         Log.i(TAG, "Snore monitoring stopped")
         super.onDestroy()
     }
@@ -279,6 +356,23 @@ class SnoreMonitoringService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)
             .build()
+    }
+
+    private fun scheduleSelfRestart() {
+        val restartIntent = Intent(this, SnoreMonitoringService::class.java).setAction(ACTION_START)
+        val pendingIntent = PendingIntent.getService(
+            this,
+            1,
+            restartIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            SystemClock.elapsedRealtime() + 5_000L,
+            pendingIntent
+        )
+        Log.i(TAG, "Scheduled monitoring restart")
     }
 
     private fun isSamsungDevice(): Boolean =

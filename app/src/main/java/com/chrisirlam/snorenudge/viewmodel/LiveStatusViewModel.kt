@@ -14,13 +14,16 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 data class LiveStatusUiState(
+    val frameConfidence: Float = 0f,
     val rollingConfidence: Float = 0f,
+    val triggerThreshold: Float = 0f,
     val engineState: TriggerDecisionEngine.State = TriggerDecisionEngine.State.IDLE,
     val lastTriggerTime: String = "None",
     val cooldownRemainingMs: Long = 0L,
     val isMonitoring: Boolean = false,
     val rmsLevel: Float = 0f,
-    val zeroCrossingRate: Float = 0f
+    val zeroCrossingRate: Float = 0f,
+    val lowFrequencyRatio: Float = 0f
 )
 
 class LiveStatusViewModel(application: Application) : AndroidViewModel(application) {
@@ -42,12 +45,15 @@ class LiveStatusViewModel(application: Application) : AndroidViewModel(applicati
                     else "None"
                     _uiState.update {
                         it.copy(
+                            frameConfidence = live.frameConfidence,
                             rollingConfidence = live.rollingConfidence,
+                            triggerThreshold = live.triggerThreshold,
                             engineState = live.engineState,
                             cooldownRemainingMs = live.cooldownRemainingMs,
                             lastTriggerTime = lastTriggerStr,
                             rmsLevel = live.rmsLevel,
-                            zeroCrossingRate = live.zeroCrossingRate
+                            zeroCrossingRate = live.zeroCrossingRate,
+                            lowFrequencyRatio = live.lowFrequencyRatio
                         )
                     }
                 }
@@ -79,6 +85,7 @@ class LiveStatusViewModel(application: Application) : AndroidViewModel(applicati
 
         _uiState.update {
             it.copy(
+                frameConfidence = confidence,
                 rollingConfidence = confidence,
                 engineState = state,
                 lastTriggerTime = lastTriggerStr,

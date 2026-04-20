@@ -15,6 +15,8 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
     // Snore fundamental frequency sits roughly in 80–500 Hz.
     // We emphasise the 80–300 Hz sub-band, with secondary attention to 300–500 Hz.
     companion object {
+        const val LOW_FREQ_LOW_HZ = 40f
+        const val LOW_FREQ_HIGH_HZ = 180f
         const val SNORE_LOW_HZ = 80f
         const val SNORE_HIGH_HZ = 500f
         const val SNORE_PRIMARY_HIGH_HZ = 300f
@@ -27,10 +29,12 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
 
         val snoreEnergy = bandEnergy(magnitude, freqResolution, SNORE_LOW_HZ, SNORE_HIGH_HZ)
         val primarySnoreEnergy = bandEnergy(magnitude, freqResolution, SNORE_LOW_HZ, SNORE_PRIMARY_HIGH_HZ)
+        val lowFrequencyEnergy = bandEnergy(magnitude, freqResolution, LOW_FREQ_LOW_HZ, LOW_FREQ_HIGH_HZ)
         val totalEnergy = bandEnergy(magnitude, freqResolution, 0f, sampleRate / 2f)
 
         val spectralRatio = if (totalEnergy > 1e-6f) snoreEnergy / totalEnergy else 0f
         val primaryRatio = if (totalEnergy > 1e-6f) primarySnoreEnergy / totalEnergy else 0f
+        val lowFrequencyRatio = if (totalEnergy > 1e-6f) lowFrequencyEnergy / totalEnergy else 0f
 
         val spectralCentroid = computeSpectralCentroid(magnitude, freqResolution)
         val spectralFlatness = computeSpectralFlatness(magnitude, freqResolution, SNORE_LOW_HZ, SNORE_HIGH_HZ)
@@ -41,6 +45,7 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
             snoreBandEnergy = snoreEnergy,
             snoreBandRatio = spectralRatio,
             primaryBandRatio = primaryRatio,
+            lowFrequencyRatio = lowFrequencyRatio,
             spectralCentroid = spectralCentroid,
             spectralFlatness = spectralFlatness,
             zeroCrossingRate = zeroCrossingRate
@@ -52,11 +57,14 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
      * Returns magnitudes for bins 0..fftSize/2.
      */
     private fun computeMagnitudeSpectrum(samples: FloatArray, fftSize: Int): FloatArray {
+        if (samples.isEmpty()) return FloatArray((fftSize / 2) + 1)
+
         val real = FloatArray(fftSize)
         val imag = FloatArray(fftSize)
+        val windowDenominator = (samples.size - 1).coerceAtLeast(1)
         // Apply Hann window and zero-pad
         for (i in samples.indices) {
-            val window = 0.5f * (1f - cos(2.0 * PI * i / (samples.size - 1))).toFloat()
+            val window = 0.5f * (1f - cos(2.0 * PI * i / windowDenominator)).toFloat()
             real[i] = samples[i] * window
         }
 
@@ -80,8 +88,13 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
             }
             j = j xor bit
             if (i < j) {
-                real[i] = real[j].also { real[j] = real[i] }
-                imag[i] = imag[j].also { imag[j] = imag[i] }
+                val tempReal = real[i]
+                real[i] = real[j]
+                real[j] = tempReal
+
+                val tempImag = imag[i]
+                imag[i] = imag[j]
+                imag[j] = tempImag
             }
         }
         // Cooley-Tukey iterative FFT
@@ -187,6 +200,8 @@ data class SnoreFeatures(
     val snoreBandRatio: Float,
     /** Fraction of total energy in the primary 80–300 Hz snore sub-band */
     val primaryBandRatio: Float,
+    /** Fraction of total energy in the 40–180 Hz low-frequency range */
+    val lowFrequencyRatio: Float,
     /** Spectral centroid (Hz) */
     val spectralCentroid: Float,
     /** Spectral flatness in the snore band (0=tonal, 1=noise-like) */

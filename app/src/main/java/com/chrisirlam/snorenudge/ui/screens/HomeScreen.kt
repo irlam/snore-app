@@ -94,6 +94,38 @@ fun HomeScreen(
                     }
                 }
             }
+
+            if (!state.batteryOptimisationIgnored || state.isSamsungDevice) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SnoreWarning.copy(alpha = 0.16f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.BatteryAlert, contentDescription = null, tint = SnoreWarning)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                if (state.batteryOptimisationIgnored) "Samsung background protection recommended"
+                                else "Disable battery optimisation for overnight use",
+                                color = SnoreWarning,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                if (state.isSamsungDevice) {
+                                    "Add SnoreNudge to Never sleeping apps to reduce One UI background kills."
+                                } else {
+                                    "Battery saving can stop the microphone service during sleep."
+                                },
+                                color = SnoreOnSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Main action buttons

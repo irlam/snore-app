@@ -21,21 +21,25 @@ class TriggerDecisionEngine {
 
     data class DecisionResult(
         val state: State,
+        val frameConfidence: Float,
         val rollingConfidence: Float,
         val shouldTrigger: Boolean,
-        val cooldownRemainingMs: Long
+        val cooldownRemainingMs: Long,
+        val triggerThreshold: Float
     )
 
-    // Rolling window of the last N frame scores (approx. 5 s at 50 ms/frame = 100 frames)
-    private val windowSize = 100
-    private val scoreWindow = ArrayDeque<Float>(windowSize)
+    private val longWindowSize = 120
+    private val recentWindowSize = 24
+    private val emaAlpha = 0.18f
+    private val scoreWindow = ArrayDeque<Float>(longWindowSize)
 
     private var consecutivePositiveFrames = 0
     private var currentState = State.IDLE
     private var cooldownEndMs = 0L
+    private var emaConfidence = 0f
 
     private val _stateFlow = MutableStateFlow(
-        DecisionResult(State.IDLE, 0f, false, 0L)
+        DecisionResult(State.IDLE, 0f, 0f, false, 0L, 0f)
     )
     val stateFlow: StateFlow<DecisionResult> = _stateFlow.asStateFlow()
 
@@ -47,16 +51,22 @@ class TriggerDecisionEngine {
      * @param nowMs          Current time in milliseconds (injectable for testing)
      */
     fun onFrameScore(score: Float, settings: AppSettings, nowMs: Long = System.currentTimeMillis()): DecisionResult {
-        // Maintain rolling window
-        if (scoreWindow.size >= windowSize) scoreWindow.removeFirst()
+        if (scoreWindow.size >= longWindowSize) scoreWindow.removeFirst()
         scoreWindow.addLast(score)
-        val rollingConfidence = scoreWindow.average().toFloat()
+        emaConfidence = if (scoreWindow.size == 1) score else (emaConfidence + ((score - emaConfidence) * emaAlpha))
 
-        // Confidence threshold derived from sensitivity (higher sensitivity = lower required confidence)
-        val confidenceThreshold = 0.55f - (settings.sensitivity - 0.5f) * 0.3f
+        val longAverage = scoreWindow.average().toFloat()
+        val recentAverage = scoreWindow.takeLast(recentWindowSize).average().toFloat()
+        val rollingConfidence = (
+            (emaConfidence * 0.5f) +
+                (recentAverage * 0.35f) +
+                (longAverage * 0.15f)
+            ).coerceIn(0f, 1f)
 
-        // Minimum number of consecutive positive frames before triggering
-        // At 50 ms/frame: 10 = 500 ms, 20 = 1 s
+        val triggerThreshold = (0.62f - (settings.sensitivity * 0.22f)).coerceIn(0.36f, 0.62f)
+        val entryThreshold = (triggerThreshold + 0.05f).coerceAtMost(0.94f)
+        val releaseThreshold = (triggerThreshold - 0.12f).coerceAtLeast(0.20f)
+
         val framesRequired = ((settings.triggerDurationSeconds * 1000) / 50).coerceAtLeast(10)
 
         val result: DecisionResult = when (currentState) {
@@ -66,15 +76,25 @@ class TriggerDecisionEngine {
                     currentState = State.IDLE
                     consecutivePositiveFrames = 0
                 }
-                DecisionResult(currentState, rollingConfidence, false, (cooldownEndMs - nowMs).coerceAtLeast(0))
+                DecisionResult(
+                    currentState,
+                    score,
+                    rollingConfidence,
+                    false,
+                    (cooldownEndMs - nowMs).coerceAtLeast(0),
+                    triggerThreshold
+                )
             }
 
             State.IDLE, State.ACCUMULATING -> {
-                if (score >= confidenceThreshold) {
+                val positiveFrame = score >= triggerThreshold || rollingConfidence >= entryThreshold
+
+                if (positiveFrame) {
                     consecutivePositiveFrames++
                     currentState = State.ACCUMULATING
                 } else {
-                    consecutivePositiveFrames = (consecutivePositiveFrames - 1).coerceAtLeast(0)
+                    val decayStep = if (rollingConfidence <= releaseThreshold) 3 else 1
+                    consecutivePositiveFrames = (consecutivePositiveFrames - decayStep).coerceAtLeast(0)
                     if (consecutivePositiveFrames == 0) currentState = State.IDLE
                 }
 
@@ -82,21 +102,28 @@ class TriggerDecisionEngine {
                     Log.i(TAG, "Snore trigger! rollingConf=$rollingConfidence consecutive=$consecutivePositiveFrames")
                     currentState = State.TRIGGERED
                     cooldownEndMs = nowMs + (settings.cooldownDurationSeconds * 1000L)
-                    DecisionResult(State.TRIGGERED, rollingConfidence, true, 0L)
+                    DecisionResult(State.TRIGGERED, score, rollingConfidence, true, 0L, triggerThreshold)
                         .also {
-                            // Immediately move to cooldown so we do not retrigger on next frame
                             currentState = State.COOLDOWN
                             consecutivePositiveFrames = 0
+                            scoreWindow.clear()
+                            emaConfidence = 0f
                         }
                 } else {
-                    DecisionResult(currentState, rollingConfidence, false, 0L)
+                    DecisionResult(currentState, score, rollingConfidence, false, 0L, triggerThreshold)
                 }
             }
 
             State.TRIGGERED -> {
-                // Transient state — should not stay here
                 currentState = State.COOLDOWN
-                DecisionResult(State.COOLDOWN, rollingConfidence, false, (cooldownEndMs - nowMs).coerceAtLeast(0))
+                DecisionResult(
+                    State.COOLDOWN,
+                    score,
+                    rollingConfidence,
+                    false,
+                    (cooldownEndMs - nowMs).coerceAtLeast(0),
+                    triggerThreshold
+                )
             }
         }
 
@@ -109,7 +136,8 @@ class TriggerDecisionEngine {
         consecutivePositiveFrames = 0
         currentState = State.IDLE
         cooldownEndMs = 0L
-        _stateFlow.value = DecisionResult(State.IDLE, 0f, false, 0L)
+        emaConfidence = 0f
+        _stateFlow.value = DecisionResult(State.IDLE, 0f, 0f, false, 0L, 0f)
     }
 
     val currentRollingConfidence: Float

@@ -13,7 +13,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.chrisirlam.snorenudge.audio.TriggerDecisionEngine
 import com.chrisirlam.snorenudge.ui.theme.*
 import com.chrisirlam.snorenudge.viewmodel.LiveStatusViewModel
 import com.chrisirlam.snorenudge.viewmodel.MainViewModel
@@ -53,7 +52,9 @@ fun DebugScreen(
                 Spacer(Modifier.height(8.dp))
 
                 DebugRow("Engine State", liveState.engineState.name)
+                DebugRow("Frame Confidence", "${(liveState.frameConfidence * 100).roundToInt()}%")
                 DebugRow("Rolling Confidence", "${(liveState.rollingConfidence * 100).roundToInt()}%")
+                DebugRow("Trigger Threshold", "${(liveState.triggerThreshold * 100).roundToInt()}%")
                 DebugRow("Last Trigger", liveState.lastTriggerTime)
                 DebugRow(
                     "Cooldown",
@@ -74,6 +75,7 @@ fun DebugScreen(
 
                 DebugRow("RMS Level", "%.5f".format(liveState.rmsLevel))
                 DebugRow("Zero Crossing Rate", "%.4f".format(liveState.zeroCrossingRate))
+                DebugRow("Low-Frequency Ratio", "${(liveState.lowFrequencyRatio * 100).roundToInt()}%")
 
                 Spacer(Modifier.height(6.dp))
                 Text("RMS", style = MaterialTheme.typography.labelSmall, color = SnoreOnSurfaceVariant)
@@ -81,6 +83,18 @@ fun DebugScreen(
                     progress = { liveState.rmsLevel.coerceIn(0f, 0.3f) / 0.3f },
                     modifier = Modifier.fillMaxWidth().height(6.dp),
                     color = SnoreSuccess,
+                    trackColor = SnoreSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                Text("Frame Confidence", style = MaterialTheme.typography.labelSmall, color = SnoreOnSurfaceVariant)
+                LinearProgressIndicator(
+                    progress = { liveState.frameConfidence.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = when {
+                        liveState.frameConfidence >= liveState.triggerThreshold && liveState.triggerThreshold > 0f -> SnoreError
+                        liveState.frameConfidence >= 0.4f -> SnoreWarning
+                        else -> SnorePrimary
+                    },
                     trackColor = SnoreSurface
                 )
                 Spacer(Modifier.height(4.dp))
@@ -121,7 +135,7 @@ fun DebugScreen(
         ) {
             Icon(Icons.Default.BugReport, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("Fire Fake Snore Trigger")
+            Text("Fire Fake Trigger")
         }
 
         OutlinedButton(

@@ -24,4 +24,11 @@ class WatchMainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        if (isFinishing) {
+            viewModel.stopVibration()
+        }
+        super.onDestroy()
+    }
 }
