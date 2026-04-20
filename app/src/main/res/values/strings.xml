@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SnoreNudge</string>
+    <string name="monitoring_active">Monitoring active</string>
+    <string name="monitoring_stopped">Monitoring stopped</string>
+    <string name="watch_connected">Watch connected</string>
+    <string name="watch_not_connected">Watch not connected</string>
+</resources>
