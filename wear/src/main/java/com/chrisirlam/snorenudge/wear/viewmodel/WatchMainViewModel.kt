@@ -7,8 +7,10 @@ import com.chrisirlam.snorenudge.wear.WatchCommand
 import com.chrisirlam.snorenudge.wear.WatchState
 import com.chrisirlam.snorenudge.wear.WatchVibrationController
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.time.Instant
@@ -47,7 +49,7 @@ class WatchMainViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         viewModelScope.launch {
-            while (true) {
+            while (currentCoroutineContext().isActive) {
                 val count = runCatching {
                     Wearable.getNodeClient(getApplication()).connectedNodes.await().size
                 }.getOrDefault(0)
@@ -57,11 +59,16 @@ class WatchMainViewModel(application: Application) : AndroidViewModel(applicatio
                         connectedPhoneCount = count
                     )
                 }
-                delay(5_000L)
+                delay(15_000L)
             }
         }
     }
 
     fun testVibration() = vibrationController.vibrateTest()
     fun stopVibration() = vibrationController.cancel()
+
+    override fun onCleared() {
+        vibrationController.cancel()
+        super.onCleared()
+    }
 }

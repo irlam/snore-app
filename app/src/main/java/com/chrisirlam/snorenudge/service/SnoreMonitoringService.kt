@@ -146,7 +146,15 @@ class SnoreMonitoringService : Service() {
 
         decisionEngine.reset()
         ServiceBridge.reset()
-        audioCaptureManager.start(serviceScope)
+        val started = audioCaptureManager.start(serviceScope)
+        if (!started) {
+            Log.e(TAG, "Failed to start audio capture; stopping monitoring service")
+            _isRunning = false
+            persistMonitoringFlag(applicationContext, false)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         Log.i(TAG, "Snore monitoring started")
     }
 

@@ -51,22 +51,29 @@ class WatchMessageListenerService : WearableListenerService() {
         Log.d(TAG, "Message received: path=${event.path} payload=$payload")
 
         acquireWakeLock()
-
-        val command = when (event.path) {
-            WearProtocol.Paths.VIBRATE -> {
-                if (payload == WearProtocol.Payload.STRONG) WatchCommand.VIBRATE_STRONG else WatchCommand.VIBRATE_MEDIUM
+        try {
+            val command = when (event.path) {
+                WearProtocol.Paths.VIBRATE -> {
+                    if (payload == WearProtocol.Payload.STRONG) WatchCommand.VIBRATE_STRONG else WatchCommand.VIBRATE_MEDIUM
+                }
+                WearProtocol.Paths.TEST_VIBRATE -> WatchCommand.TEST
+                WearProtocol.Paths.STOP_VIBRATE -> WatchCommand.STOP
+                else -> null
             }
-            WearProtocol.Paths.TEST_VIBRATE -> WatchCommand.TEST
-            WearProtocol.Paths.STOP_VIBRATE -> WatchCommand.STOP
-            else -> null
-        }
 
-        command?.let { cmd ->
-            WatchState.lastCommandFlow.value = cmd
-            handleCommand(cmd)
+            command?.let { cmd ->
+                WatchState.lastCommandFlow.value = cmd
+                handleCommand(cmd)
+            }
+        } finally {
+            releaseWakeLock()
         }
+    }
 
+    override fun onDestroy() {
+        vibrationController.cancel()
         releaseWakeLock()
+        super.onDestroy()
     }
 
     private fun handleCommand(command: WatchCommand) {

@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.chrisirlam.snorenudge.audio.TriggerDecisionEngine
 import com.chrisirlam.snorenudge.service.ServiceBridge
 import com.chrisirlam.snorenudge.service.SnoreMonitoringService
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -59,12 +61,12 @@ class LiveStatusViewModel(application: Application) : AndroidViewModel(applicati
                 }
         }
 
-        // Poll service running state every 250 ms (service bridge resets on stop,
+        // Poll service running state every 1s (service bridge resets on stop,
         // but isRunning gives a reliable indicator)
         viewModelScope.launch {
-            while (true) {
+            while (currentCoroutineContext().isActive) {
                 _uiState.update { it.copy(isMonitoring = SnoreMonitoringService.isRunning) }
-                delay(250)
+                delay(1_000)
             }
         }
     }

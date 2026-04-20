@@ -5,6 +5,7 @@ import android.util.Log
 import com.chrisirlam.snorenudge.shared.WearProtocol
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.tasks.await
 
 private const val TAG = "WatchCommandSender"
@@ -48,25 +49,37 @@ class WatchCommandSender(private val context: Context) {
 
     private suspend fun sendToAllNodes(path: String, payload: ByteArray): Int {
         return try {
-            val nodes = Wearable.getNodeClient(context).connectedNodes.await()
-            if (nodes.isEmpty()) {
-                Log.w(TAG, "No connected watch nodes, cannot send $path")
-                return 0
+            val firstNodes = Wearable.getNodeClient(context).connectedNodes.await()
+            val firstSent = sendToNodes(path, payload, firstNodes)
+            if (firstSent > 0 || firstNodes.isNotEmpty()) {
+                return firstSent
             }
-            var sent = 0
-            for (node in nodes) {
-                try {
-                    messageClient.sendMessage(node.id, path, payload).await()
-                    Log.d(TAG, "Sent $path to ${node.displayName}")
-                    sent++
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to send $path to ${node.displayName}: ${e.message}")
-                }
+
+            // One retry helps when node transport is still warming up after reconnect.
+            delay(300L)
+            val retryNodes = Wearable.getNodeClient(context).connectedNodes.await()
+            val retrySent = sendToNodes(path, payload, retryNodes)
+            if (retrySent == 0 && retryNodes.isEmpty()) {
+                Log.w(TAG, "No connected watch nodes after retry, cannot send $path")
             }
-            sent
+            retrySent
         } catch (e: Exception) {
             Log.e(TAG, "sendToAllNodes failed for $path: ${e.message}")
             0
         }
+    }
+
+    private suspend fun sendToNodes(path: String, payload: ByteArray, nodes: List<com.google.android.gms.wearable.Node>): Int {
+        var sent = 0
+        for (node in nodes) {
+            try {
+                messageClient.sendMessage(node.id, path, payload).await()
+                Log.d(TAG, "Sent $path to ${node.displayName}")
+                sent++
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send $path to ${node.displayName}: ${e.message}")
+            }
+        }
+        return sent
     }
 }

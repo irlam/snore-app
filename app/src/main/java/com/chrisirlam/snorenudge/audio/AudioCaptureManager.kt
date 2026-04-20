@@ -32,14 +32,16 @@ class AudioCaptureManager(
 
     private var audioRecord: AudioRecord? = null
     private var captureJob: Job? = null
+    @Volatile
+    private var captureActive = false
 
-    fun start(scope: CoroutineScope) {
-        if (audioRecord != null) return
+    fun start(scope: CoroutineScope): Boolean {
+        if (audioRecord != null) return true
 
         val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
         if (minBufSize <= 0) {
             Log.e(TAG, "AudioRecord invalid min buffer size: $minBufSize")
-            return
+            return false
         }
         val bufferSize = maxOf(minBufSize, FRAME_SIZE_SAMPLES * 2 * 4)
 
@@ -53,16 +55,16 @@ class AudioCaptureManager(
             )
         } catch (se: SecurityException) {
             Log.e(TAG, "Microphone permission missing: ${se.message}")
-            return
+            return false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create AudioRecord: ${e.message}")
-            return
+            return false
         }
 
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             Log.e(TAG, "AudioRecord failed to initialize")
             record.release()
-            return
+            return false
         }
 
         audioRecord = record
@@ -71,17 +73,18 @@ class AudioCaptureManager(
         } catch (se: SecurityException) {
             Log.e(TAG, "Microphone permission denied at start: ${se.message}")
             record.release()
-            return
+            return false
         } catch (e: Exception) {
             Log.e(TAG, "AudioRecord start failed: ${e.message}")
             record.release()
-            return
+            return false
         }
+        captureActive = true
         Log.d(TAG, "AudioRecord started, bufferSize=$bufferSize")
 
         captureJob = scope.launch(Dispatchers.IO) {
             val buffer = ShortArray(FRAME_SIZE_SAMPLES)
-            while (isActive) {
+            while (isActive && captureActive) {
                 val read = record.read(buffer, 0, buffer.size)
                 if (read > 0) {
                     onFrame(buffer.copyOf(read))
@@ -90,17 +93,23 @@ class AudioCaptureManager(
                 }
             }
         }
+        return true
     }
 
     fun stop() {
-        captureJob?.cancel()
-        captureJob = null
+        captureActive = false
         audioRecord?.let { ar ->
-            if (ar.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                ar.stop()
+            try {
+                if (ar.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    ar.stop()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "AudioRecord stop failed: ${e.message}")
             }
             ar.release()
         }
+        captureJob?.cancel()
+        captureJob = null
         audioRecord = null
         Log.d(TAG, "AudioRecord stopped and released")
     }

@@ -9,8 +9,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chrisirlam.snorenudge.service.SnoreMonitoringService
 import com.chrisirlam.snorenudge.watch.WatchCommandSender
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class MainUiState(
@@ -83,11 +85,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun pollStatus() = viewModelScope.launch {
-        while (true) {
+        while (currentCoroutineContext().isActive) {
             val count = watchCommandSender.getConnectedNodeCount()
             updateDeviceState()
             _uiState.update { it.copy(watchConnected = count > 0, watchNodeCount = count) }
-            delay(5_000L)
+            delay(10_000L)
         }
     }
 }
