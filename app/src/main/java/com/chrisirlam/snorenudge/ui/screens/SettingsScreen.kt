@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,7 +18,10 @@ import com.chrisirlam.snorenudge.viewmodel.SettingsViewModel
 import kotlin.math.roundToInt
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    onNavigateToBattery: () -> Unit = {}
+) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val scroll = rememberScrollState()
 
@@ -45,7 +49,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             value = settings.sensitivity,
             valueLabel = "${(settings.sensitivity * 100).roundToInt()}%",
             onValueChange = viewModel::setSensitivity,
-            icon = Icons.Default.TuneOutlined
+            icon = Icons.Outlined.Tune
         )
 
         StepperSetting(
@@ -100,6 +104,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             subtitle = "Uses stronger repeating pattern"
         )
 
+        // ── Device ────────────────────────────────────────────────────────────
+        SettingsSection("Device")
+
+        NavigationSetting(
+            label = "Battery Optimisation",
+            subtitle = "Keep app running overnight",
+            icon = Icons.Default.BatteryAlert,
+            onClick = onNavigateToBattery
+        )
+
         // ── Developer ─────────────────────────────────────────────────────────
         SettingsSection("Developer")
 
@@ -108,7 +122,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             checked = settings.debugMode,
             onCheckedChange = viewModel::setDebugMode,
             icon = Icons.Default.BugReport,
-            subtitle = "Verbose logs in logcat"
+            subtitle = "Shows debug tab and verbose logs"
         )
     }
 }
@@ -217,6 +231,33 @@ private fun StepperSetting(
             IconButton(onClick = onIncrease, enabled = value < range.last) {
                 Icon(Icons.Default.Add, contentDescription = "Increase")
             }
+        }
+    }
+}
+
+@Composable
+private fun NavigationSetting(
+    label: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SnoreSurfaceVariant),
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = SnoreWarning, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(label, fontWeight = FontWeight.Medium)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SnoreOnSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SnoreOnSurfaceVariant)
         }
     }
 }

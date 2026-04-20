@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -21,7 +21,10 @@ import com.chrisirlam.snorenudge.ui.theme.*
 import com.chrisirlam.snorenudge.viewmodel.MainViewModel
 
 @Composable
-fun HomeScreen(viewModel: MainViewModel) {
+fun HomeScreen(
+    viewModel: MainViewModel,
+    onNavigateToBattery: () -> Unit = {}
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val permissionsLauncher = rememberLauncherForActivityResult(
@@ -142,16 +145,35 @@ fun HomeScreen(viewModel: MainViewModel) {
                 }
             }
 
-            OutlinedButton(
-                onClick = { viewModel.sendTestVibrate() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(12.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Default.Vibration, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Test Watch Vibration")
+                OutlinedButton(
+                    onClick = { viewModel.sendTestVibrate() },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Vibration, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Test Watch")
+                }
+
+                OutlinedButton(
+                    onClick = onNavigateToBattery,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SnoreWarning),
+                    border = BorderStroke(1.dp, SnoreWarning.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Default.BatteryAlert, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Battery")
+                }
             }
         }
     }

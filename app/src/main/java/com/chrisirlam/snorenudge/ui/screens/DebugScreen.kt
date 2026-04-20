@@ -43,7 +43,7 @@ fun DebugScreen(
             )
         )
 
-        // Live level readout
+        // Live detection readout
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = SnoreSurfaceVariant)
@@ -60,6 +60,41 @@ fun DebugScreen(
                     if (liveState.cooldownRemainingMs > 0) "${liveState.cooldownRemainingMs / 1000}s remaining" else "None"
                 )
                 DebugRow("Monitoring", if (liveState.isMonitoring) "Active" else "Stopped")
+            }
+        }
+
+        // Live audio signal readout
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = SnoreSurfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Audio Signal", fontWeight = FontWeight.Bold, color = SnorePrimary)
+                Spacer(Modifier.height(8.dp))
+
+                DebugRow("RMS Level", "%.5f".format(liveState.rmsLevel))
+                DebugRow("Zero Crossing Rate", "%.4f".format(liveState.zeroCrossingRate))
+
+                Spacer(Modifier.height(6.dp))
+                Text("RMS", style = MaterialTheme.typography.labelSmall, color = SnoreOnSurfaceVariant)
+                LinearProgressIndicator(
+                    progress = { liveState.rmsLevel.coerceIn(0f, 0.3f) / 0.3f },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = SnoreSuccess,
+                    trackColor = SnoreSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                Text("Confidence", style = MaterialTheme.typography.labelSmall, color = SnoreOnSurfaceVariant)
+                LinearProgressIndicator(
+                    progress = { liveState.rollingConfidence.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = when {
+                        liveState.rollingConfidence >= 0.7f -> SnoreError
+                        liveState.rollingConfidence >= 0.4f -> SnoreWarning
+                        else -> SnorePrimary
+                    },
+                    trackColor = SnoreSurface
+                )
             }
         }
 

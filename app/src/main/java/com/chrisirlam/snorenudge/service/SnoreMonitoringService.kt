@@ -19,12 +19,21 @@ import kotlinx.coroutines.flow.first
 private const val TAG = "SnoreMonitoringService"
 private const val NOTIFICATION_ID = 1001
 private const val CHANNEL_ID = "snore_monitor"
+private const val PREFS_NAME = "snore_service_prefs"
+private const val PREF_WAS_MONITORING = "was_monitoring"
 
 /**
  * Long-running foreground service that owns the audio pipeline and manages
  * the entire snore-detection lifecycle.
  *
  * Start via [startMonitoring] / stop via [stopMonitoring] convenience methods.
+ *
+ * Samsung robustness:
+ * - Uses PARTIAL_WAKE_LOCK to keep the CPU alive.
+ * - Persists a "was_monitoring" flag in SharedPreferences so [BootReceiver] can
+ *   restart the service after a reboot or OS-forced kill.
+ * - The foreground notification uses IMPORTANCE_DEFAULT on Samsung to resist
+ *   aggressive battery management.
  */
 class SnoreMonitoringService : Service() {
 
@@ -47,6 +56,19 @@ class SnoreMonitoringService : Service() {
                 .setAction(ACTION_STOP)
             context.startService(intent)
         }
+
+        /** Write the monitoring-active flag synchronously (safe from any thread/receiver). */
+        fun persistMonitoringFlag(context: Context, active: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_WAS_MONITORING, active)
+                .apply()
+        }
+
+        /** Read the monitoring-active flag synchronously (safe from BootReceiver). */
+        fun wasMonitoring(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(PREF_WAS_MONITORING, false)
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -61,6 +83,7 @@ class SnoreMonitoringService : Service() {
     private lateinit var decisionEngine: TriggerDecisionEngine
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lastTriggerMs: Long? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -84,7 +107,7 @@ class SnoreMonitoringService : Service() {
         when (intent?.action) {
             ACTION_START -> startMonitoringInternal()
             ACTION_STOP -> stopSelf()
-            ACTION_FAKE_SNORE -> serviceScope.launch { fireTrigger(1.0f, 0.9f, "test") }
+            ACTION_FAKE_SNORE -> serviceScope.launch { fireTrigger(1.0f, 0.9f, 0f, 0f, "test") }
         }
         return START_STICKY
     }
@@ -95,8 +118,10 @@ class SnoreMonitoringService : Service() {
 
         acquireWakeLock()
         startForeground(NOTIFICATION_ID, buildNotification("Monitoring for snoring…"))
+        persistMonitoringFlag(applicationContext, true)
 
         decisionEngine.reset()
+        ServiceBridge.reset()
         audioCaptureManager.start(serviceScope)
         Log.i(TAG, "Snore monitoring started")
     }
@@ -108,18 +133,42 @@ class SnoreMonitoringService : Service() {
         val score = classifier.classify(features, settings.sensitivity)
         val result = decisionEngine.onFrameScore(score, settings)
 
+        // Push live state to the bridge so the UI can observe it
+        ServiceBridge.update(
+            ServiceBridge.LiveState(
+                rollingConfidence = result.rollingConfidence,
+                engineState = result.state,
+                cooldownRemainingMs = result.cooldownRemainingMs,
+                lastTriggerMs = lastTriggerMs,
+                rmsLevel = frame.rms,
+                zeroCrossingRate = features.zeroCrossingRate
+            )
+        )
+
         if (settings.debugMode) {
-            Log.v(TAG, "rms=${frame.rms} score=$score state=${result.state} conf=${result.rollingConfidence}")
+            Log.v(
+                TAG,
+                "rms=${frame.rms} zcr=${features.zeroCrossingRate} score=$score " +
+                        "state=${result.state} conf=${result.rollingConfidence}"
+            )
         }
 
         if (result.shouldTrigger) {
-            fireTrigger(score, result.rollingConfidence, "snore")
+            fireTrigger(score, result.rollingConfidence, frame.rms, features.zeroCrossingRate, "snore")
         }
     }
 
-    private suspend fun fireTrigger(score: Float, confidence: Float, source: String) {
+    private suspend fun fireTrigger(
+        score: Float,
+        confidence: Float,
+        rmsLevel: Float,
+        zeroCrossingRate: Float,
+        source: String
+    ) {
         val settings = settingsDataStore.settingsFlow.first()
-        Log.i(TAG, "Trigger fired! source=$source confidence=$confidence")
+        val nowMs = System.currentTimeMillis()
+        lastTriggerMs = nowMs
+        Log.i(TAG, "Trigger fired! source=$source confidence=$confidence rms=$rmsLevel")
 
         var watchSent = false
         if (settings.watchVibrationEnabled) {
@@ -133,9 +182,9 @@ class SnoreMonitoringService : Service() {
 
         // Persist event (lightweight — no audio stored)
         val event = SnoreEvent(
-            timestampMs = System.currentTimeMillis(),
+            timestampMs = nowMs,
             confidence = confidence,
-            rmsLevel = 0f,
+            rmsLevel = rmsLevel,
             watchCommandSent = watchSent,
             phoneVibrated = settings.phoneVibrationEnabled,
             triggerSource = source
@@ -186,6 +235,8 @@ class SnoreMonitoringService : Service() {
         audioCaptureManager.stop()
         serviceScope.cancel()
         wakeLock?.let { if (it.isHeld) it.release() }
+        ServiceBridge.reset()
+        persistMonitoringFlag(applicationContext, false)
         Log.i(TAG, "Snore monitoring stopped")
         super.onDestroy()
     }
@@ -195,13 +246,18 @@ class SnoreMonitoringService : Service() {
     // ── Notification ──────────────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Snore Monitor",
+        // Use IMPORTANCE_DEFAULT on Samsung to reduce the chance of the service
+        // being killed by aggressive battery management (One UI Device Care).
+        val importance = if (isSamsungDevice()) {
+            NotificationManager.IMPORTANCE_DEFAULT
+        } else {
             NotificationManager.IMPORTANCE_LOW
-        ).apply {
+        }
+        val channel = NotificationChannel(CHANNEL_ID, "Snore Monitor", importance).apply {
             description = "Active during overnight snore monitoring"
             setShowBadge(false)
+            // Prevent audible alerts from the service notification itself
+            setSound(null, null)
         }
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(channel)
@@ -224,4 +280,7 @@ class SnoreMonitoringService : Service() {
             .setSilent(true)
             .build()
     }
+
+    private fun isSamsungDevice(): Boolean =
+        Build.MANUFACTURER.equals("samsung", ignoreCase = true)
 }

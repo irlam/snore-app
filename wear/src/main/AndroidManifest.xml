@@ -7,6 +7,9 @@
     <!-- Keep watch awake when receiving command -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Notification permission (Wear OS 3+ / Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Wearable communication -->
     <uses-feature android:name="android.hardware.type.watch" />
 
@@ -28,10 +31,13 @@
             </intent-filter>
         </activity>
 
-        <!-- Listens for messages from the phone app -->
+        <!-- Listens for messages from the phone app.
+             WearableListenerService is started by GMS when a matching message arrives,
+             even when the watch is in ambient/sleep mode. -->
         <service
             android:name=".WatchMessageListenerService"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.BIND_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <data

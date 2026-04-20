@@ -34,6 +34,7 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
 
         val spectralCentroid = computeSpectralCentroid(magnitude, freqResolution)
         val spectralFlatness = computeSpectralFlatness(magnitude, freqResolution, SNORE_LOW_HZ, SNORE_HIGH_HZ)
+        val zeroCrossingRate = computeZeroCrossingRate(frame.samples)
 
         return SnoreFeatures(
             rms = frame.rms,
@@ -41,7 +42,8 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
             snoreBandRatio = spectralRatio,
             primaryBandRatio = primaryRatio,
             spectralCentroid = spectralCentroid,
-            spectralFlatness = spectralFlatness
+            spectralFlatness = spectralFlatness,
+            zeroCrossingRate = zeroCrossingRate
         )
     }
 
@@ -150,6 +152,21 @@ class SnoreFeatureExtractor(private val sampleRate: Int = AudioCaptureManager.SA
         return (geometricMean / arithmeticMean).toFloat().coerceIn(0f, 1f)
     }
 
+    /**
+     * Zero crossing rate — number of sign changes per sample.
+     *
+     * Snoring typically has ZCR ≈ 0.01–0.08 at 16 kHz (corresponds to 80–640 Hz).
+     * High ZCR (> 0.12) suggests broadband noise or speech, not snoring.
+     */
+    private fun computeZeroCrossingRate(samples: FloatArray): Float {
+        if (samples.size < 2) return 0f
+        var crossings = 0
+        for (i in 1 until samples.size) {
+            if ((samples[i] >= 0f) != (samples[i - 1] >= 0f)) crossings++
+        }
+        return crossings.toFloat() / samples.size
+    }
+
     private fun nextPowerOfTwo(n: Int): Int {
         var p = 1
         while (p < n) p = p shl 1
@@ -173,5 +190,7 @@ data class SnoreFeatures(
     /** Spectral centroid (Hz) */
     val spectralCentroid: Float,
     /** Spectral flatness in the snore band (0=tonal, 1=noise-like) */
-    val spectralFlatness: Float
+    val spectralFlatness: Float,
+    /** Zero crossing rate — sign changes per sample (proxy for dominant frequency) */
+    val zeroCrossingRate: Float
 )
