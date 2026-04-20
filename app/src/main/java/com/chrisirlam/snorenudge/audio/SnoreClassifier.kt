@@ -40,6 +40,9 @@ class RuleBasedSnoreClassifier : SnoreClassifier {
         private const val CENTROID_MAX_HZ = 400f
         // Spectral flatness above this reduces confidence (pure noise)
         private const val FLATNESS_THRESHOLD = 0.6f
+        // ZCR range for snoring at 16 kHz: ~0.01–0.08
+        private const val ZCR_LOW = 0.005f
+        private const val ZCR_HIGH = 0.10f
     }
 
     override fun classify(features: SnoreFeatures, sensitivity: Float): Float {
@@ -52,15 +55,15 @@ class RuleBasedSnoreClassifier : SnoreClassifier {
         var score = 0f
         var weight = 0f
 
-        // Component 1: snore band energy ratio (weight 0.35)
+        // Component 1: snore band energy ratio (weight 0.30)
         val bandScore = (features.snoreBandRatio / TARGET_BAND_RATIO).coerceIn(0f, 1f)
-        score += bandScore * 0.35f
-        weight += 0.35f
+        score += bandScore * 0.30f
+        weight += 0.30f
 
-        // Component 2: primary sub-band ratio (weight 0.25)
+        // Component 2: primary sub-band ratio (weight 0.20)
         val primaryScore = (features.primaryBandRatio / TARGET_PRIMARY_RATIO).coerceIn(0f, 1f)
-        score += primaryScore * 0.25f
-        weight += 0.25f
+        score += primaryScore * 0.20f
+        weight += 0.20f
 
         // Component 3: spectral centroid penalty (weight 0.20)
         val centroidScore = if (features.spectralCentroid <= CENTROID_MAX_HZ) 1f
@@ -68,12 +71,25 @@ class RuleBasedSnoreClassifier : SnoreClassifier {
         score += centroidScore * 0.20f
         weight += 0.20f
 
-        // Component 4: spectral flatness (less flat = more tonal = more snore-like) (weight 0.20)
+        // Component 4: spectral flatness (less flat = more tonal = more snore-like) (weight 0.15)
         val flatnessPenalty = if (features.spectralFlatness > FLATNESS_THRESHOLD)
             1f - ((features.spectralFlatness - FLATNESS_THRESHOLD) / (1f - FLATNESS_THRESHOLD))
         else 1f
-        score += flatnessPenalty.coerceIn(0f, 1f) * 0.20f
-        weight += 0.20f
+        score += flatnessPenalty.coerceIn(0f, 1f) * 0.15f
+        weight += 0.15f
+
+        // Component 5: zero crossing rate — snore is low-freq so ZCR is in moderate-low range (weight 0.15)
+        val zcrScore = when {
+            features.zeroCrossingRate < ZCR_LOW ->
+                // Too few crossings — near-silence or sub-20 Hz rumble
+                (features.zeroCrossingRate / ZCR_LOW).coerceIn(0f, 1f)
+            features.zeroCrossingRate <= ZCR_HIGH -> 1f
+            else ->
+                // Too many crossings — broadband noise or speech
+                (1f - ((features.zeroCrossingRate - ZCR_HIGH) / ZCR_HIGH)).coerceIn(0f, 1f)
+        }
+        score += zcrScore * 0.15f
+        weight += 0.15f
 
         val rawScore = if (weight > 0) score / weight else 0f
 

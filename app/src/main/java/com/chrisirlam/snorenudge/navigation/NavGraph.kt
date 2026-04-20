@@ -19,7 +19,10 @@ fun NavGraph(
 ) {
     NavHost(navController = navController, startDestination = Screen.Home.route, modifier = modifier) {
         composable(Screen.Home.route) {
-            HomeScreen(viewModel = mainViewModel)
+            HomeScreen(
+                viewModel = mainViewModel,
+                onNavigateToBattery = { navController.navigate(Screen.BatteryOptimisation.route) }
+            )
         }
         composable(Screen.LiveStatus.route) {
             LiveStatusScreen(viewModel = liveStatusViewModel)
@@ -28,10 +31,16 @@ fun NavGraph(
             HistoryScreen(viewModel = historyViewModel)
         }
         composable(Screen.Settings.route) {
-            SettingsScreen(viewModel = settingsViewModel)
+            SettingsScreen(
+                viewModel = settingsViewModel,
+                onNavigateToBattery = { navController.navigate(Screen.BatteryOptimisation.route) }
+            )
         }
         composable(Screen.Debug.route) {
             DebugScreen(mainViewModel = mainViewModel, liveStatusViewModel = liveStatusViewModel)
+        }
+        composable(Screen.BatteryOptimisation.route) {
+            BatteryOptimisationScreen(onBack = { navController.popBackStack() })
         }
     }
 }

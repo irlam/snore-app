@@ -14,6 +14,7 @@ sealed class Screen(
     object History : Screen("history", "History", Icons.Default.History)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
     object Debug : Screen("debug", "Debug", Icons.Default.BugReport)
+    object BatteryOptimisation : Screen("battery_opt", "Battery", Icons.Default.BatteryAlert)
 
     companion object {
         val bottomNavItems = listOf(Home, LiveStatus, History, Settings)

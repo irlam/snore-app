@@ -2,6 +2,7 @@ package com.chrisirlam.snorenudge.wear
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.os.PowerManager
 import android.util.Log
@@ -26,6 +27,12 @@ enum class WatchCommand { VIBRATE_STRONG, VIBRATE_MEDIUM, TEST, STOP }
  *
  * This is a [WearableListenerService] so it is woken up even when the watch
  * activity is not in the foreground — critical for overnight use.
+ *
+ * On receiving a snore nudge:
+ *  1. Acquires a wake lock to keep the watch CPU alive.
+ *  2. Triggers repeating vibration via [WatchVibrationController].
+ *  3. Posts a high-priority notification.
+ *  4. Launches [WatchMainActivity] to show the "Roll Over!" screen.
  */
 class WatchMessageListenerService : WearableListenerService() {
 
@@ -66,10 +73,12 @@ class WatchMessageListenerService : WearableListenerService() {
             WatchCommand.VIBRATE_STRONG -> {
                 vibrationController.vibrateStrong()
                 showNudgeNotification("Snore detected — roll over!")
+                launchWatchActivity()
             }
             WatchCommand.VIBRATE_MEDIUM -> {
                 vibrationController.vibrateShort()
                 showNudgeNotification("Snore detected!")
+                launchWatchActivity()
             }
             WatchCommand.TEST -> {
                 vibrationController.vibrateTest()
@@ -79,13 +88,31 @@ class WatchMessageListenerService : WearableListenerService() {
         }
     }
 
+    /** Bring the watch UI to the foreground so the user sees the nudge. */
+    private fun launchWatchActivity() {
+        val intent = Intent(this, WatchMainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not launch WatchMainActivity: ${e.message}")
+        }
+    }
+
     private fun showNudgeNotification(text: String) {
+        val tapIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, WatchMainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val notif = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle("SnoreNudge")
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setContentIntent(tapIntent)
             .setAutoCancel(true)
             .build()
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)

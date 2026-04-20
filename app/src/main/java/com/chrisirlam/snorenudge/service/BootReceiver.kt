@@ -8,17 +8,21 @@ import android.util.Log
 private const val TAG = "BootReceiver"
 
 /**
- * Receives BOOT_COMPLETED so the app can restart monitoring if the user had
- * it running before the device rebooted.
+ * Receives BOOT_COMPLETED and restarts [SnoreMonitoringService] if the user
+ * had monitoring active before the device rebooted.
  *
- * Currently a stub — to enable auto-restart, persist a "was running" flag in
- * DataStore and check it here.
+ * The "was monitoring" flag is persisted synchronously via SharedPreferences
+ * by [SnoreMonitoringService] whenever monitoring starts or stops.
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            Log.d(TAG, "Boot completed received — auto-restart not enabled by default")
-            // To enable: read DataStore setting and call SnoreMonitoringService.startMonitoring(context)
+            if (SnoreMonitoringService.wasMonitoring(context)) {
+                Log.i(TAG, "Boot completed — restarting snore monitoring")
+                SnoreMonitoringService.startMonitoring(context)
+            } else {
+                Log.d(TAG, "Boot completed — monitoring was not active, not restarting")
+            }
         }
     }
 }
