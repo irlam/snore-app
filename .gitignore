@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+
+# Android Studio
+.idea/
+*.iws
+*.ipr
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing keys (never commit these)
+*.jks
+*.keystore
+
+# Kotlin
+*.class
+
+# OS
+.DS_Store
+Thumbs.db
