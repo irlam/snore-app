@@ -22,10 +22,10 @@ interface SnoreEventDao {
 
     /** Deletes all events older than the given timestamp. */
     @Query("DELETE FROM snore_events WHERE timestampMs < :beforeMs")
-    suspend fun deleteEventsBefore(beforeMs: Long)
+    suspend fun deleteEventsBefore(beforeMs: Long): Int
 
     @Query("DELETE FROM snore_events")
-    suspend fun deleteAll()
+    suspend fun deleteAll(): Int
 
     @Query("SELECT COUNT(*) FROM snore_events")
     suspend fun count(): Int

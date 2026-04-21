@@ -8,6 +8,7 @@ import com.chrisirlam.snorenudge.service.ServiceBridge
 import com.chrisirlam.snorenudge.service.SnoreMonitoringService
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -28,6 +29,7 @@ data class LiveStatusUiState(
     val lowFrequencyRatio: Float = 0f
 )
 
+@OptIn(FlowPreview::class)
 class LiveStatusViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(LiveStatusUiState())

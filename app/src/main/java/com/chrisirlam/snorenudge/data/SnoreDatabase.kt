@@ -25,7 +25,7 @@ abstract class SnoreDatabase : RoomDatabase() {
                     SnoreDatabase::class.java,
                     "snore_nudge.db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
             }

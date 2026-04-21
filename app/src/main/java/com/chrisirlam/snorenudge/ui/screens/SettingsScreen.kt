@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
@@ -93,7 +94,7 @@ fun SettingsScreen(
             label = "Phone Sound Alert",
             checked = settings.phoneSoundEnabled,
             onCheckedChange = viewModel::setPhoneSound,
-            icon = Icons.Default.VolumeUp
+            icon = Icons.AutoMirrored.Filled.VolumeUp
         )
 
         SwitchSetting(
