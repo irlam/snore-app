@@ -20,6 +20,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SnoreNudgeWear">
 
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="false" />
+
         <activity
             android:name=".WatchMainActivity"
             android:exported="true"
@@ -31,9 +35,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Listens for messages from the phone app.
-             WearableListenerService is started by GMS when a matching message arrives,
-             even when the watch is in ambient/sleep mode. -->
         <service
             android:name=".WatchMessageListenerService"
             android:exported="true">
