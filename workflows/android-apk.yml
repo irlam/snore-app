@@ -1,0 +1,57 @@
+# SnoreNudge – Build Debug APK (CI)
+#
+# What this file does
+# - Builds a *debug* APK for the Android app module (":app") on every push.
+# - Uploads the generated APK as a GitHub Actions artifact so you can download and install it.
+# - "Keeps the last 3" as closely as GitHub allows using retention time (3 days).
+#
+# File name
+# - .github/workflows/android-apk.yml
+#
+# Times
+# - No scheduled runs in this workflow (so no UK-time/UTC conversion needed).
+
+name: Build Debug APK
+
+on:
+  push:
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x ./gradlew
+
+      - name: Build debug APK (:app)
+        run: ./gradlew :app:assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
