@@ -76,7 +76,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendTestVibrate() = viewModelScope.launch {
-        watchCommandSender.sendVibrateCommand(strong = true)
+        watchCommandSender.sendTestVibrateCommand()
     }
 
     fun fireFakeSnore() {
