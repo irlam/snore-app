@@ -1,9 +1,9 @@
-# SnoreNudge – Build Debug APK (CI)
+# SnoreNudge – Build Debug APKs (CI)
 #
 # What this file does
-# - Builds a *debug* APK for the Android app module (":app") on every push.
-# - Uploads the generated APK as a GitHub Actions artifact so you can download and install it.
-# - "Keeps the last 3" as closely as GitHub allows using retention time (3 days).
+# - Builds debug APKs for both the phone (":app") and watch (":wear") modules.
+# - Uploads both APKs as GitHub Actions workflow artifacts.
+# - Creates or updates a GitHub Release tagged "latest-apks" with both APKs as assets.
 #
 # File name
 # - .github/workflows/android-apk.yml
@@ -15,17 +15,18 @@ name: Build Debug APK
 
 on:
   push:
+  workflow_dispatch:
 
 concurrency:
   group: apk-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-debug-apk:
-    name: Build debug APK
+    name: Build debug APKs
     runs-on: ubuntu-latest
 
     steps:
@@ -48,10 +49,35 @@ jobs:
       - name: Build debug APK (:app)
         run: ./gradlew :app:assembleDebug
 
-      - name: Upload APK artifact
+      - name: Build debug APK (:wear)
+        run: ./gradlew :wear:assembleDebug
+
+      - name: Rename APK outputs
+        run: |
+          cp app/build/outputs/apk/debug/*.apk phone-debug.apk
+          cp wear/build/outputs/apk/debug/*.apk watch-debug.apk
+
+      - name: Upload phone APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: phone-debug-apk
+          path: phone-debug.apk
           if-no-files-found: error
           retention-days: 3
+
+      - name: Upload watch APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: watch-debug-apk
+          path: watch-debug.apk
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Create or update GitHub Release with APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apks
+          name: Latest APKs
+          files: |
+            phone-debug.apk
+            watch-debug.apk
